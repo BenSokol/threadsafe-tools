@@ -3,7 +3,7 @@
 * @Author:   Ben Sokol <Ben>
 * @Email:    ben@bensokol.com
 * @Created:  February 21st, 2019 [2:16am]
-* @Modified: February 21st, 2019 [2:19am]
+* @Modified: February 22nd, 2019 [1:23pm]
 * @Version:  1.0.0
 *
 * Copyright (C) 2019 by Ben Sokol. All Rights Reserved.
@@ -19,14 +19,12 @@
 
 namespace TS {
 
-  template <typename mtx_type, typename T>
-  void log(std::ofstream &ofs, mtx_type &mtx, T t) {
-    TS::PRIVATE::ostream(ofs, mtx, t);
-  }
-
-  template <typename mtx_type, typename T, typename... Args>
-  void log(std::ofstream &ofs, mtx_type &mtx, T t, Args... args) {
-    TS::PRIVATE::ostream(ofs, mtx, t, args...);
+  template <typename mtx_type, typename... Args>
+  void log(std::ofstream &ofs, mtx_type &mtx, Args... args) {
+    std::lock_guard<mtx_type> lck(mtx);
+    if (ofs.is_open()) {
+      TS::PRIVATE::ostream(ofs, args...);
+    }
   }
 
 }  // namespace TS
