@@ -3,7 +3,7 @@
 * @Author:   Ben Sokol <Ben>
 * @Email:    ben@bensokol.com
 * @Created:  February 19th, 2019 [12:28pm]
-* @Modified: February 21st, 2019 [1:41am]
+* @Modified: April 11th, 2019 [6:05pm]
 * @Version:  1.0.0
 *
 * Copyright (C) 2019 by Ben Sokol. All Rights Reserved.
@@ -16,10 +16,6 @@
 
 #include "TS_latch.hpp"
 
-#if !defined(__cpp_lib_shared_mutex) && !defined(_LIBCPP_AVAILABILITY_SHARED_MUTEX)
-#define shared_mutex shared_timed_mutex
-#warning std::shared_mutex is not defined. Using std::shared_timed_mutex instead.
-#endif
 
 namespace TS {
 
@@ -34,7 +30,7 @@ namespace TS {
   }
 
   void Latch::count_down_and_wait() {
-    std::shared_lock<std::shared_mutex> lck(mMtx);
+    std::shared_lock<TS_LATCH_mutex_type> lck(mMtx);
     mCount = mCount - 1;
     if (mCount == 0) {
       mCount = mThreshold;
@@ -46,7 +42,7 @@ namespace TS {
   }
 
   void Latch::count_down(size_t n) {
-    std::shared_lock<std::shared_mutex> lck(mMtx);
+    std::shared_lock<TS_LATCH_mutex_type> lck(mMtx);
     if (n < mCount) {
       throw std::invalid_argument("n must be less than count.");
     }
@@ -61,7 +57,7 @@ namespace TS {
   }
 
   void Latch::wait() {
-    std::shared_lock<std::shared_mutex> lck(mMtx);
+    std::shared_lock<TS_LATCH_mutex_type> lck(mMtx);
     mCond.wait(lck);
   }
 
