@@ -1,0 +1,9 @@
+.pre_build
+make.log
+ts-benchmark
+ts-test
+prog
+bin/
+dep/
+obj/
+logs/
