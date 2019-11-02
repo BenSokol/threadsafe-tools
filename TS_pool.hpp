@@ -3,7 +3,7 @@
 * @Author:   Ben Sokol
 * @Email:    ben@bensokol.com
 * @Created:  March 26th, 2019 [8:17am]
-* @Modified: March 29th, 2019 [11:16pm]
+* @Modified: November 1st, 2019 [5:43pm]
 * @Version:  1.0.0
 *
 * Copyright (C) 2019 by Ben Sokol. All Rights Reserved.
@@ -12,11 +12,12 @@
 #ifndef TS_POOL_HPP
 #define TS_POOL_HPP
 
+#include <cstdint>  // intmax_t
+#include <cstdlib>  // size_t
+
 #include <algorithm>           // std::min
 #include <cassert>             // assert
 #include <condition_variable>  // std::condition_variable
-#include <cstdint>             // intmax_t
-#include <cstdlib>             // size_t
 #include <functional>          // std::bind, std::function
 #include <future>              // std::future, std::packaged_task
 #include <limits>              // std::numeric_limits
@@ -47,7 +48,8 @@ namespace TS {
     // enqueue with priority
     template <typename function_type, typename... Args>
     std::future<typename std::result_of<function_type(Args...)>::type> enqueue(priority_type aPriority,
-                                                                               function_type &&f, Args &&... args);
+                                                                               function_type &&f,
+                                                                               Args &&... args);
 
     // enqueue with normal (0) priority
     template <typename function_type, typename... Args>
@@ -87,23 +89,25 @@ namespace TS {
   void pool<priority_type>::taskThread() {
     // run tasks in queue until mStop == true || mTasks.empty()
     for (;;) {
-      std::function<void()> task;
+      std::function<void()> function_task;
       {
         std::unique_lock<std::mutex> lock(mQueueMutex);
-        mQueueUpdatedCondition.wait(lock, [this]() { return (mStop || !mTasks.empty()); });
+        mQueueUpdatedCondition.wait(lock, [this]() {
+          return (mStop || !mTasks.empty());
+        });
 
         //End the worker thread immediately if it is asked to stop
         if (mStop) {
           return;
         }
         else {
-          task = std::get<1>(std::move(mTasks.top()));
+          function_task = std::get<1>(std::move(mTasks.top()));
           mTasks.pop();
         }
       }
 
       // run task and notify when complete.
-      task();
+      function_task();
       mTaskFinishedCondition.notify_all();
     }
   }
@@ -118,7 +122,7 @@ namespace TS {
     mStop = false;
     mWorkers = std::vector<std::thread>();
     mTasks = std::priority_queue<prioritized_task, std::vector<prioritized_task>, prioritizedTaskCompare>(
-        prioritizedTaskCompareFunc);
+      prioritizedTaskCompareFunc);
 
     // Start task threads
     for (size_t i = 0; i < aThreads; i++) {
@@ -144,12 +148,11 @@ namespace TS {
   template <typename priority_type>
   template <typename function_type, typename... Args>
   std::future<typename std::result_of<function_type(Args...)>::type>
-      pool<priority_type>::enqueue(priority_type aPriority, function_type &&f, Args &&... args) {
+    pool<priority_type>::enqueue(priority_type aPriority, function_type &&f, Args &&... args) {
+    auto packaged_task = std::make_shared<std::packaged_task<typename std::result_of<function_type(Args...)>::type()>>(
+      std::bind(std::forward<function_type>(f), std::forward<Args>(args)...));
 
-    auto task = std::make_shared<std::packaged_task<typename std::result_of<function_type(Args...)>::type()>>(
-        std::bind(std::forward<function_type>(f), std::forward<Args>(args)...));
-
-    std::future<typename std::result_of<function_type(Args...)>::type> res = task->get_future();
+    std::future<typename std::result_of<function_type(Args...)>::type> res = packaged_task->get_future();
 
     {
       std::unique_lock<std::mutex> lock(mQueueMutex);
@@ -159,7 +162,9 @@ namespace TS {
         throw std::runtime_error("enqueue on stopped ThreadPool");
       }
 
-      mTasks.emplace(prioritized_task(aPriority, [task]() { (*task)(); }));
+      mTasks.emplace(prioritized_task(aPriority, [packaged_task]() {
+        (*packaged_task)();
+      }));
     }
 
     mQueueUpdatedCondition.notify_one();
@@ -177,15 +182,17 @@ namespace TS {
 
   template <typename priority_type>
   void pool<priority_type>::wait() {
-    for (const auto &worker : mWorkers) {
-      if (std::this_thread::get_id() == worker.get_id()) {
-        throw std::runtime_error("Cannot wait on threadpool from within a task");
-      }
+    if (std::any_of(mWorkers.begin(), mWorkers.end(), [&](const auto &worker) {
+          return std::this_thread::get_id() == worker.get_id();
+        })) {
+      throw std::runtime_error("Cannot wait on threadpool from within a task");
     }
 
     while (!mTasks.empty()) {
       std::unique_lock<std::mutex> lock(mTaskFinishedMutex);
-      mTaskFinishedCondition.wait(lock, [this]() { return mTasks.empty(); });
+      mTaskFinishedCondition.wait(lock, [this]() {
+        return mTasks.empty();
+      });
     }
   }
 
